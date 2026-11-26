@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Цветочный магазин «Ромашка»</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .star-rating { display: flex; gap: 5px; font-size: 32px; cursor: pointer; margin: 5px 0 10px; user-select: none; }
+        .star-rating span { color: #ccc; }
+        .star-rating span.active { color: #FFC107; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo">🌼 Ромашка</div>
+        <button class="cart-btn" onclick="toggleCart()">🛒 Корзина (<span id="cart-count">0</span>)</button>
+    </header>
+
+    <section class="hero">
+        <h1>Свежие цветы с доставкой на дом</h1>
+        <p>Собираем букеты с любовью и доставляем по городу за 60 минут.</p>
+    </section>
+
+    <main class="container">
+        <div class="controls">
+            <input type="text" id="search-input" class="search-input" placeholder="🔍 Поиск букета..." oninput="filterProducts()">
+            <div class="categories" id="category-buttons"></div>
+        </div>
+        <div class="products" id="product-list"></div>
+    </main>
+
+    <!-- Раздел отзывов -->
+    <section class="reviews-section">
+        <h2>Отзывы наших покупателей</h2>
+        <div class="reviews-grid" id="reviews-list"></div>
+
+        <div class="add-review-box">
+            <h3>Оставить отзыв</h3>
+            <form onsubmit="addNewReview(event)">
+                <input type="text" id="name_reviewer" placeholder="Ваше ФИО" required>
+                <select id="id_flower" required></select>
+                
+                <div class="star-rating" id="star-selector">
+                    <span onclick="setStars(1)" class="active">★</span>
+                    <span onclick="setStars(2)" class="active">★</span>
+                    <span onclick="setStars(3)" class="active">★</span>
+                    <span onclick="setStars(4)" class="active">★</span>
+                    <span onclick="setStars(5)" class="active">★</span>
+                </div>
+                <input type="hidden" id="stars" value="5">
+                
+                <textarea id="comments" rows="3" placeholder="Ваш отзыв..." required></textarea>
+                <button type="submit" class="submit-btn">Опубликовать отзыв</button>
+            </form>
+        </div>
+    </section>
+
+    <!-- Корзина -->
+    <div class="modal" id="cart-modal">
+        <div class="modal-content">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h2 style="margin:0;">Оформление заказа</h2>
+                <button onclick="toggleCart()" style="background:none; border:none; font-size:24px; cursor:pointer;">&times;</button>
+            </div>
+            <div id="cart-items" style="margin: 15px 0;"></div>
+            <h3 style="text-align: right;">Итого: <span id="cart-total">0</span> ₽</h3>
+            <form class="order-form" onsubmit="submitOrder(event)">
+                <input type="text" id="client-fio" placeholder="ФИО" required>
+                <input type="tel" id="client-phone" placeholder="Телефон" required>
+                <input type="email" id="client-email" placeholder="Email" required>
+                <button type="submit" class="submit-btn">Оформить заказ</button>
+            </form>
+        </div>
+    </div>
+
+    <footer>© 2026 Цветочный магазин «Ромашка»</footer>
+
+    <script>
+        let allFlowers = [];
+        let currentCatId = 'all';
+        let cart = [];
+
+        async function loadCatalog() {
+            const res = await fetch('/api/catalog');
+            const data = await res.json();
+            allFlowers = data.flowers;
+
+            document.getElementById('category-buttons').innerHTML = 
+                `<button class="cat-btn active" onclick="selectCategory('all', this)">Все букеты</button>` +
+                data.categories.map(c => `<button class="cat-btn" onclick="selectCategory(${c.id_category}, this)">${c.category}</button>`).join('');
+
+            document.getElementById('id_flower').innerHTML = 
+                `<option value="">Выберите букет...</option>` +
+                allFlowers.map(f => `<option value="${f.id_flower}">${f.flower_name}</option>`).join('');
+
+            renderProducts(allFlowers);
+        }
+
+        function renderProducts(list) {
+            document.getElementById('product-list').innerHTML = list.map(f => `
+                <div class="card">
+                    <img src="${f.img}" alt="${f.flower_name}" class="card-img" onerror="this.src='https://placeholder.com'">
+                    <div class="card-body">
+                        <div>
+                            <div class="card-cat">${f.category}</div>
+                            <div class="card-title">${f.flower_name}</div>
+                            <div class="card-desc">${f.description}</div>
+                        </div>
+                        <div class="card-footer">
+                            <span class="price">${f.price} ₽</span>
+                            <button class="add-btn" onclick="addToCart('${f.flower_name}', ${f.price})">В корзину</button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function selectCategory(id, btn) {
+            currentCatId = id;
+            document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            filterProducts();
+        }
+
+        function filterProducts() {
+            const text = document.getElementById('search-input').value.toLowerCase();
+            const filtered = allFlowers.filter(f => {
+                const matchCat = currentCatId === 'all' || f.id_category === currentCatId;
+                const matchText = f.flower_name.toLowerCase().includes(text) || f.description.toLowerCase().includes(text);
+                return matchCat && matchText;
+            });
+            renderProducts(filtered);
+        }
+
+        function setStars(count) {
+            document.getElementById('stars').value = count;
+            document.querySelectorAll('#star-selector span').forEach((s, i) => {
+                s.classList.toggle('active', i < count);
+            });
+        }
+
+        async function loadReviews() {
+            const res = await fetch('/api/reviews');
+            const reviews = await res.json();
+            document.getElementById('reviews-list').innerHTML = reviews.map(r => `
+                <div class="review-card">
+                    <div>
+                        <div class="review-header">
+                            <span class="review-author">${r.name_reviewer}</span>
+                            <span class="review-stars">${'★'.repeat(r.stars)}${'☆'.repeat(5 - r.stars)}</span>
+                        </div>
+                        <div class="review-bouquet">🌸 ${r.flower_name}</div>
+                        <p class="review-text">«${r.comments}»</p>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function addNewReview(e) {
+            e.preventDefault();
+            await fetch('/api/reviews', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id_flower: Number(document.getElementById('id_flower').value),
+                    name_reviewer: document.getElementById('name_reviewer').value,
+                    stars: Number(document.getElementById('stars').value),
+                    comments: document.getElementById('comments').value
+                })
+            });
+            e.target.reset();
+            setStars(5);
+            loadReviews();
+            alert('Отзыв сохранен в базу данных!');
+        }
+
+        function addToCart(name, price) {
+            cart.push({ name, price });
+            document.getElementById('cart-count').innerText = cart.length;
+        }
+
+        function toggleCart() {
+            const modal = document.getElementById('cart-modal');
+            modal.style.display = modal.style.display === 'flex' ? 'none' : 'flex';
+            renderCart();
+        }
+
+        function renderCart() {
+            const itemsDiv = document.getElementById('cart-items');
+            itemsDiv.innerHTML = cart.length ? cart.map((item, i) => `
+                <div class="cart-item"><span>${item.name}</span><span><b>${item.price} ₽</b> <button onclick="removeItem(${i})" style="color:red;border:none;background:none;cursor:pointer;">✕</button></span></div>
+            `).join('') : '<p style="color:#777;">Корзина пуста</p>';
+            document.getElementById('cart-total').innerText = cart.reduce((s, i) => s + i.price, 0);
+        }
+
+        function removeItem(i) {
+            cart.splice(i, 1);
+            document.getElementById('cart-count').innerText = cart.length;
+            renderCart();
+        }
+
+        async function submitOrder(e) {
+            e.preventDefault();
+            if (!cart.length) return alert('Корзина пуста!');
+            await fetch('/api/order', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    fio: document.getElementById('client-fio').value,
+                    phone: document.getElementById('client-phone').value,
+                    email: document.getElementById('client-email').value
+                })
+            });
+            alert('Заказ оформлен! Клиент добавлен в базу.');
+            cart = [];
+            document.getElementById('cart-count').innerText = 0;
+            toggleCart();
+            e.target.reset();
+        }
+
+        loadCatalog();
+        loadReviews();
+    </script>
+</body>
+</html>
